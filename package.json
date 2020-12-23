@@ -4,17 +4,16 @@
   "description": "Youtube downloader telegram bot",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "engines": {
-    "node": "12.13.1"
+    "start": "nodemon index"
   },
   "author": "Ayibov Shakhzod",
   "license": "ISC",
   "dependencies": {
+    "nodemon": "^2.0.6",
+    "express": "^4.17.1",
     "telegraf": "^3.38.0",
     "winston": "^3.3.3",
     "youtube-dl": "^3.0.2"
-  }
+  },
+  "type": "module"
 }
