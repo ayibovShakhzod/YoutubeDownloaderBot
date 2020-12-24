@@ -1,7 +1,9 @@
+const express = require('express');
+const mongoose = require('mongoose');
 const Telegraf = require('telegraf');
 const fs = require('fs');
 const youtubedl = require('youtube-dl');
-const express = require('express');
+const mongodb = require('mongodb');
 
 const app = express();
 const PORT = 8000;
@@ -9,14 +11,46 @@ const PORT = 8000;
 app.get('/', (req, res) => {
   res.send('Hello. I changed this text sda');
 });
+const config = require(`${__dirname}/config.json`);
+const uri = 'mongodb://localhost:27017';
+const dbName = 'test';
 
+// mongodb.MongoClient.connect(uri, function(error, client) {
+
+//   const db = client.db(dbName);
+
+//   var bucket = new mongodb.GridFSBucket(db);
+
+//   fs.createReadStream(`${__dirname}/cache/video.mp4`).
+//     pipe(bucket.openUploadStream('video.mp4')).
+//     on('error', function(error) {
+//         console.log('error!');
+//     }).
+//     on('finish', function() {
+//       console.log('done! upload');
+//     });
+//     bucket.openDownloadStreamByName('video.mp4').
+//     pipe(fs.createWriteStream(`${__dirname}/cache/video2.mp4`)).
+//   on('error', function(error) {
+//     console.log('error!');
+//   }).
+//   on('finish', function() {
+//     console.log('done! download');
+//   });
+// });
+
+mongoose
+  .connect(config.DB_URL, {
+    useMongoClient: true
+  })
+  .then(() => console.log('MongoDB connected'))
+  .catch(() => console.log('ERROR'));
 // Other Files
 // Init winston logger (logger.js)
 var outplaced = require(`${__dirname}/logger.js`);
 var logger = outplaced.logger;
 
 // Files
-const config = require(`${__dirname}/config.json`);
 
 // Global Vars
 var DOWN_URL = 'https://www.youtube.com/watch?v=';
@@ -46,8 +80,6 @@ bot.startPolling();
 bot.catch(function (err) {
   logger.log('info', err);
 });
-
-
 bot.on('text', async (ctx) => {
   try {
     console.log(ctx.message);
@@ -75,9 +107,8 @@ bot.on('text', async (ctx) => {
       const video = youtubedl(
         videoURL,
         // Optional arguments passed to youtube-dl.
-        ['--format=18'],
+        ['--format=mp4'],
         // Additional options can be given for calling `child_process.execFile()`.
-        { cwd: __dirname }
       );
       video.on('info', function (info) {
         infor = info;
@@ -85,10 +116,14 @@ bot.on('text', async (ctx) => {
 
         if (videosize < TeleMaxData) {
           ctx.reply('Download Started');
-          video.pipe(
-            fs.createWriteStream(
-              `${__dirname}/cache/${video_id}.mp4`
-            )
+          mongodb.MongoClient.connect(
+            uri,
+            function (error, client) {
+              const db = client.db(dbName);
+
+              var bucket = new mongodb.GridFSBucket(db);
+              video.pipe(bucket.openUploadStream(video_id));
+            }
           );
 
           // Status of Download
@@ -121,11 +156,19 @@ bot.on('text', async (ctx) => {
                 'info',
                 `Video gets Send! - This might take a few Seconds! \n Title: ${infor.title}, Size: ${videosize}`
               );
-              await ctx.replyWithVideo({
-                source: fs.createReadStream(
-                  `${__dirname}/cache/${video_id}.mp4`
-                )
+              mongodb.MongoClient.connect(uri, function(error, client) {
+
+                const db = client.db(dbName);
+
+                var bucket = new mongodb.GridFSBucket(db);
+
+                let video= bucket.openDownloadStreamByName(video_id);
+                ctx.replyWithVideo({
+                    source: video
+                  });
               });
+
+              
             } catch (err) {
               logger.log('info', 'Error: sendVideo');
               ctx.reply('Error: sendVideo');

@@ -9,8 +9,11 @@
   "author": "Ayibov Shakhzod",
   "license": "ISC",
   "dependencies": {
-    "nodemon": "^2.0.6",
     "express": "^4.17.1",
+    "mongodb": "^3.6.3",
+    "mongoose": "^5.11.8",
+    "node-telegram-bot-api": "^0.51.0",
+    "nodemon": "^2.0.6",
     "telegraf": "^3.38.0",
     "winston": "^3.3.3",
     "youtube-dl": "^3.0.2"

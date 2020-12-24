@@ -1,3 +1,4 @@
 {
-    "token": "1499939248:AAGWpQLFSkE-fxIJd2hRrCS88ZTaWM5srFk"
+    "token": "1499939248:AAGWpQLFSkE-fxIJd2hRrCS88ZTaWM5srFk",
+    "DB_URL":"mongodb://localhost/YTdownloader"
 }
