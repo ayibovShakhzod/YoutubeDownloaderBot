@@ -2,8 +2,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Telegraf = require('telegraf');
 const fs = require('fs');
-const youtubedl = require('youtube-dl');
+const ytdl = require('ytdl-core');
 const mongodb = require('mongodb');
+const readline = require('readline');
 
 const app = express();
 const PORT = 8000;
@@ -64,11 +65,33 @@ logger.log(
   'info',
   'Bot is running;; TOKEN: ' + config.token
 );
-bot.start((ctx) =>
+bot.start((ctx) => {
   ctx.reply(
     "Hey there!\nI'm sending Youtube videos to you!"
-  )
-);
+  );
+  const url = 'https://www.youtube.com/watch?v=pahO5XjnfLA';
+  
+  const video = ytdl(url, { quality: 'highest' });
+  let starttime;
+  video.pipe(fs.createWriteStream(`${__dirname}/cache/video.mp4`));
+  video.once('response', () => {
+    starttime = Date.now();
+  });
+  video.on('progress', (chunkLength, downloaded, total) => {
+    const percent = downloaded / total;
+    const downloadedMinutes = (Date.now() - starttime) / 1000 / 60;
+    const estimatedDownloadTime = (downloadedMinutes / percent) - downloadedMinutes;
+    readline.cursorTo(process.stdout, 0);
+    process.stdout.write(`${(percent * 100).toFixed(2)}% downloaded `);
+    process.stdout.write(`(${(downloaded / 1024 / 1024).toFixed(2)}MB of ${(total / 1024 / 1024).toFixed(2)}MB)\n`);
+    process.stdout.write(`running for: ${downloadedMinutes.toFixed(2)}minutes`);
+    process.stdout.write(`, estimated time left: ${estimatedDownloadTime.toFixed(2)}minutes `);
+    readline.moveCursor(process.stdout, 0, -1);
+  });
+  video.on('end', () => {
+    process.stdout.write('\n\n');
+  });
+});
 bot.help((ctx) =>
   ctx.reply(
     'Send me a link and I will send you the vid :) \n cmds: \n \n /video {videoID}'
@@ -103,214 +126,161 @@ bot.on('text', async (ctx) => {
 
       const videoURL = DOWN_URL + video_id;
       console.log(video_id);
+      let info = await ytdl.getInfo(video_id);
+      let format = ytdl.chooseFormat(info.formats, { quality: 'lowest' });
+      console.log('Format found!', format);
+      const video = ytdl(videoURL, { quality: 'lowest' });
+      video.once('response', () => {
+        starttime = Date.now();
+        mongodb.MongoClient.connect(
+          uri,
+          function (error, client) {
+            const db = client.db(dbName);
 
-      const video = youtubedl(
-        videoURL,
-        // Optional arguments passed to youtube-dl.
-        ['--format=mp4'],
-        // Additional options can be given for calling `child_process.execFile()`.
-      );
-      video.on('info', function (info) {
-        infor = info;
-        videosize = infor.size / 1000000;
-
-        if (videosize < TeleMaxData) {
-          ctx.reply('Download Started');
-          mongodb.MongoClient.connect(
-            uri,
-            function (error, client) {
-              const db = client.db(dbName);
-
-              var bucket = new mongodb.GridFSBucket(db);
-              video.pipe(bucket.openUploadStream(video_id));
-            }
-          );
-
-          // Status of Download
-          var pos = 0;
-          video.on('data', function data(chunk) {
-            pos += chunk.length;
-            if (infor.size) {
-              let percent = (
-                (pos / infor.size) *
-                100
-              ).toFixed(2);
-              process.stdout.cursorTo(0);
-              process.stdout.clearLine(1);
-              process.stdout.write(percent + '%');
-            }
-          });
-
-          video.on('end', async function () {
-            logger.log('info', 'Download completed');
-            try {
-              // ctx.reply(`Download completed!\nVideo gets Send! - This might take a few Seconds! \n \n Title: \n ${infor.title}. It's ${videosize}mb big.`);
-              ctx.reply(
-                'Download has been started. \n🎞 : ' +
-                  infor.title +
-                  '\n📥 : ' +
-                  videosize * 0.001 +
-                  ' KB\n\n\nPlease wait ...'
-              );
-              logger.log(
-                'info',
-                `Video gets Send! - This might take a few Seconds! \n Title: ${infor.title}, Size: ${videosize}`
-              );
-              mongodb.MongoClient.connect(uri, function(error, client) {
-
-                const db = client.db(dbName);
-
-                var bucket = new mongodb.GridFSBucket(db);
-
-                let video= bucket.openDownloadStreamByName(video_id);
-                ctx.replyWithVideo({
-                    source: video
+            var bucket = new mongodb.GridFSBucket(db);
+            video.pipe(bucket.openUploadStream(video_id)).on('finish', () => {
+              mongodb.MongoClient.connect(
+                uri, function (error, client) {
+        
+                  const db = client.db(dbName);
+        
+                  var bucket = new mongodb.GridFSBucket(db);
+                  let vi = bucket.openDownloadStreamByName(video_id);
+                  ctx.replyWithVideo({
+                    source: vi
                   });
-              });
-
-              
-            } catch (err) {
-              logger.log('info', 'Error: sendVideo');
-              ctx.reply('Error: sendVideo');
-            }
-          });
-        } else {
-          ctx.reply(
-            `The Video is ${videosize}mb. The maximum size for sending videos from Telegram is ${TeleMaxData}mb.`
-          );
-          logger.log(
-            'info',
-            `The Video size is to big! (${videosize}mb)`
-          );
-        }
+                }
+              );
+            });
+          }
+        );
+        ctx.reply('Download Started');
       });
+      video.on('progress', (chunkLength, downloaded, total) => {
+        const percent = downloaded / total;
+        const downloadedMinutes = (Date.now() - starttime) / 1000 / 60;
+        const estimatedDownloadTime = (downloadedMinutes / percent) - downloadedMinutes;
+        readline.cursorTo(process.stdout, 0);
+        process.stdout.write(`${(percent * 100).toFixed(2)}% downloaded `);
+        process.stdout.write(`(${(downloaded / 1024 / 1024).toFixed(2)}MB of ${(total / 1024 / 1024).toFixed(2)}MB)\n`);
+        process.stdout.write(`running for: ${downloadedMinutes.toFixed(2)}minutes`);
+        process.stdout.write(`, estimated time left: ${estimatedDownloadTime.toFixed(2)}minutes `);
+        readline.moveCursor(process.stdout, 0, -1);
+      });
+      video.on('end', () => {
+        process.stdout.write('\n\n');
+      });
+     
+      // function mapInfo (item) {
+      //   'use strict'
+      //   return {
+      //     itag: item.format_id,
+      //     filetype: item.ext,
+      //     format_note: item.format_note,
+      //     format: item.format,
+      //     resolution:
+      //       item.resolution ||
+      //       (item.width ? item.width + 'x' + item.height : 'audio only')
+      //   }
+      // }
+      
+      // ytdl.getInfo(videoURL, function getInfo (err, info) {
+      //   'use strict'
+      //   if (err) {
+      //     throw err
+      //   }
+      //   var formats = { id: info.id, formats: info.formats.map(mapInfo) }
+      //   console.log(formats)
+      // })
+      
+      // video.on('info',  function (info) {
+      //   infor = info;
+      //   console.log(infor.size);
+      //   videosize = infor.size / 100000;
+      //   if (TeleMaxData) {
+      //     ctx.reply('Download Started');
+      //     mongodb.MongoClient.connect(
+      //       uri,
+      //       function (error, client) {
+      //         const db = client.db(dbName);
+
+      //         var bucket = new mongodb.GridFSBucket(db);
+      //         video.pipe(bucket.openUploadStream(video_id));
+      //       }
+      //     );
+
+      //     // Status of Download
+      //     var pos = 0;
+
+      //     // let msgInfo =  await ctx.reply('0.0%');
+      //     // console.log(msgInfo);
+      //     video.on('data', function data(chunk) {
+      //       pos += chunk.length;
+      //       if (infor.size) {
+      //         let percent = (
+      //           (pos / infor.size) *
+      //           100
+      //         ).toFixed(2);
+      //         // ctx.telegram.editMessageText(
+      //         //   msgInfo.chat.id,
+      //         //   msgInfo.message_id,
+      //         //   msgInfo.message_id,
+      //         //   `${percent}%`
+      //         // );
+      //         process.stdout.cursorTo(0);
+      //         process.stdout.clearLine(1);
+      //         process.stdout.write(percent + '%');
+      //       }
+      //     });
+
+      //     video.on('end',  function () {
+      //       logger.log('info', 'Download completed');
+      //       try{
+      //       ctx.reply(
+      //         'Download has been started. \n🎞 : ' +
+      //           infor.title +
+      //           '\n📥 : ' +
+      //           videosize * 0.001 +
+      //           ' KB\n\n\nPlease wait ...'
+      //       );
+      //       logger.log(
+      //         'info',
+      //         `Video gets Send! - This might take a few Seconds! \n Title: ${infor.title}, Size: ${videosize}`
+      //       );
+      //        mongodb.MongoClient.connect(
+      //         uri, function (error, client) {
+
+      //           const db = client.db(dbName);
+
+      //           var bucket = new mongodb.GridFSBucket(db);
+      //           let vi = bucket.openDownloadStreamByName(video_id);
+      //           ctx.replyWithVideo({
+      //             source: vi
+      //           });
+      //         }
+      //       );
+      //     }catch(error){
+      //       console.log(error + "===================");
+      //     }
+      //     });
+      //   } else {
+      //     ctx.reply(
+      //       `The Video is ${videosize}mb. The maximum size for sending videos from Telegram is ${TeleMaxData}mb.`
+      //     );
+      //     logger.log(
+      //       'info',
+      //       `The Video size is to big! (${videosize}mb)`
+      //     );
+      //   }
+      // });
     } else {
       ctx.reply('Is not url');
     }
-  } catch (error) {}
-});
-
-bot.command('/video', async (ctx) => {
-  try {
-    let userID = ctx.from['id'];
-
-    let input = ctx.message['text'];
-    let subText = input.split(' ');
-    let subSplit;
-    let videoURL;
-
-    logger.log(
-      'info',
-      `-----------NEW_DOWNLOAD_BY_${userID}-----------`
-    );
-
-    if (subText[1].includes('https://youtu.be/')) {
-      subSplit = subText.split('.be/');
-      videoURL = DOWN_URL + subSplit[1];
-    } else {
-      videoURL = DOWN_URL + subText[1];
-    }
-    logger.log('info', `Youtube video URL: ${videoURL}`);
-
-    // Remove previous video from cache!
-    if (fs.existsSync(`${__dirname}/cache/${userID}.mp4`)) {
-      fs.unlink(
-        `${__dirname}/cache/${userID}.mp4`,
-        (err) => {
-          if (err) logger.log('info', err);
-          logger.log(
-            'info',
-            `${__dirname}/cache/${userID}.mp4 was deleted`
-          );
-        }
-      );
-    }
-
-    // Download video
-    var video = youtubedl(
-      videoURL,
-      // Optional arguments passed to youtube-dl.
-      ['--format=18'],
-      // Additional options can be given for calling `child_process.execFile()`.
-      { cwd: __dirname }
-    );
-
-    // Will be called when the download starts.
-    video.on('info', function (info) {
-      infor = info;
-      videosize = infor.size / 1000000;
-
-      if (videosize < TeleMaxData) {
-        ctx.reply('Download Started');
-        video.pipe(
-          fs.createWriteStream(
-            `${__dirname}/cache/${userID}.mp4`
-          )
-        );
-
-        // Status of Download
-        var pos = 0;
-        ctx.sendText(`${percent}%`);
-        video.on('data', function data(chunk) {
-          pos += chunk.length;
-          if (infor.size) {
-            let percent = (
-              (pos / infor.size) *
-              100
-            ).toFixed(2);
-            process.stdout.cursorTo(0);
-            process.stdout.clearLine(1);
-            process.stdout.write(percent + '%');
-            telegram.editMessageText(
-              ctx.chat.id,
-              messageId,
-              inlineMessageId,
-              text,
-              [extra]
-            );
-          }
-        });
-
-        video.on('end', async function () {
-          logger.log('info', 'Download completed');
-          try {
-            // ctx.reply(`Download completed!\nVideo gets Send! - This might take a few Seconds! \n \n Title: \n ${infor.title}. It's ${videosize}mb big.`);
-            ctx.reply(
-              'Download has been started. \n🎞 : ' +
-                infor.title +
-                '\n📥 : ' +
-                videosize * 0.001 +
-                ' KB\n\n\nPlease wait ...'
-            );
-            logger.log(
-              'info',
-              `Video gets Send! - This might take a few Seconds! \n Title: ${infor.title}, Size: ${videosize}`
-            );
-            await ctx.replyWithVideo({
-              source: fs.createReadStream(
-                `${__dirname}/cache/${userID}.mp4`
-              )
-            });
-          } catch (err) {
-            logger.log('info', 'Error: sendVideo');
-            ctx.reply('Error: sendVideo');
-          }
-        });
-      } else {
-        ctx.reply(
-          `The Video is ${videosize}mb. The maximum size for sending videos from Telegram is ${TeleMaxData}mb.`
-        );
-        logger.log(
-          'info',
-          `The Video size is to big! (${videosize}mb)`
-        );
-      }
-    });
-  } catch (err) {
-    ctx.reply('ERROR');
-    logger.log('info', 'error');
+  } catch (error) {
+    console.log(error + 'Shakhzod');
   }
 });
+
 app.listen(PORT, () =>
   console.log(`My server is running on port ${PORT}`)
 );
