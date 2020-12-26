@@ -20,6 +20,5 @@
     "winston": "^3.3.3",
     "youtube-dl": "^3.0.2",
     "ytdl-core": "^4.2.1"
-  },
-  "type": "module"
+  }
 }
